@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>船长译 Lingua Pi</title>
+<script>
+(function() {
+  var sc = document.createElement('script');
+  sc.src = 'https://sdk.minepi.com/pi-sdk.js';
+  sc.async = true;
+  sc.onload = function() { window.__piSDKReady = true; };
+  sc.onerror = function() { window.__piSDKReady = false; };
+  document.head.appendChild(sc);
+})();
+</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #7B2CBF 0%, #48CAE4 100%);
+    min-height: 100vh;
+    padding: 20px;
+    color: #1a1a1a;
+  }
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+    overflow: hidden;
+  }
+  .header {
+    background: linear-gradient(135deg, #7B2CBF 0%, #48CAE4 100%);
+    color: #fff;
+    padding: 32px 24px;
+    text-align: center;
+  }
+  .header h1 {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+  }
+  .header .subtitle {
+    font-size: 14px;
+    opacity: 0.9;
+    letter-spacing: 2px;
+  }
+  .user-bar {
+    background: rgba(255,255,255,0.15);
+    border-radius: 12px;
+    padding: 10px 16px;
+    margin-top: 16px;
+    font-size: 13px;
+  }
+  .user-bar.logged { background: rgba(255,255,255,0.25); }
+  .main {
+    padding: 24px;
+  }
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    background: #f4f4f8;
+    border-radius: 12px;
+    padding: 4px;
+  }
+  .tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s;
+  }
+  .tab.active {
+    background: #fff;
+    color: #7B2CBF;
+    box-shadow: 0 2px 8px rgba(123,44,191,0.15);
+  }
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 8px;
+  }
+  textarea, select {
+    width: 100%;
+    padding: 14px;
+    border: 2px solid #e8e8ef;
+    border-radius: 12px;
+    font-size: 15px;
+    font-family: inherit;
+    resize: vertical;
+    transition: border-color 0.2s;
+  }
+  textarea:focus, select:focus {
+    outline: none;
+    border-color: #7B2CBF;
+  }
+  textarea {
+    min-height: 120px;
+  }
+  .field {
+    margin-bottom: 18px;
+  }
+  .row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+  }
+  .row > div { flex: 1; }
+  .row > button { flex: 0 0 auto; }
+  .btn {
+    background: linear-gradient(135deg, #7B2CBF 0%, #48CAE4 100%);
+    color: #fff;
+    border: none;
+    padding: 14px 28px;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.2s;
+    width: 100%;
+  }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(123,44,191,0.3); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .btn-secondary {
+    background: #f4f4f8;
+    color: #7B2CBF;
+    margin-top: 10px;
+  }
+  .output {
+    margin-top: 20px;
+    padding: 18px;
+    background: linear-gradient(135deg, #f8f4ff 0%, #f0fbff 100%);
+    border-radius: 12px;
+    border: 2px dashed #d0b0ff;
+    min-height: 100px;
+    font-size: 15px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .output.empty {
+    color: #999;
+    font-style: italic;
+  }
+  .copy-btn {
+    background: #7B2CBF;
+    color: #fff;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    float: right;
+    margin-bottom: 8px;
+  }
+  .footer {
+    padding: 16px 24px;
+    text-align: center;
+    color: #999;
+    font-size: 12px;
+    background: #fafafa;
+  }
+  .counter {
+    font-size: 11px;
+    color: #999;
+    text-align: right;
+    margin-top: 4px;
+  }
+  .counter.warn { color: #e63946; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h1>船长译</h1>
+    <div class="subtitle">LINGUA PI</div>
+    <div class="user-bar" id="userBar">
+      🔌 <span id="authStatus">正在连接 Pi 网络...</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="tabs">
+      <div class="tab active" data-tab="translate">🌍 翻译</div>
+      <div class="tab" data-tab="polish">✨ 润色</div>
+    </div>
+
+    <div id="translatePanel">
+      <div class="field">
+        <label>输入文本</label>
+        <textarea id="inputText" placeholder="输入要翻译的内容..." maxlength="2000"></textarea>
+        <div class="counter"><span id="charCount">0</span> / 2000</div>
+      </div>
+
+      <div class="field row">
+        <div>
+          <label>源语言</label>
+          <select id="srcLang">
+            <option value="auto">自动检测</option>
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="ko">한국어</option>
+            <option value="es">Español</option>
+            <option value="fr">Français</option>
+            <option value="de">Deutsch</option>
+            <option value="ru">Русский</option>
+            <option value="ar">العربية</option>
+            <option value="hi">हिन्दी</option>
+            <option value="pt">Português</option>
+          </select>
+        </div>
+        <div>
+          <label>目标语言</label>
+          <select id="tgtLang">
+            <option value="en">English</option>
+            <option value="zh" selected>中文</option>
+            <option value="ja">日本語</option>
+            <option value="ko">한국어</option>
+            <option value="es">Español</option>
+            <option value="fr">Français</option>
+            <option value="de">Deutsch</option>
+            <option value="ru">Русский</option>
+            <option value="ar">العربية</option>
+            <option value="hi">हिन्दी</option>
+            <option value="pt">Português</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn" id="translateBtn">🚀 翻译</button>
+    </div>
+
+    <div id="polishPanel" style="display:none;">
+      <div class="field">
+        <label>输入草稿</label>
+        <textarea id="polishInput" placeholder="输入要润色的文字（邮件、文案、报告...）" maxlength="2000"></textarea>
+      </div>
+      <div class="field">
+        <label>润色风格</label>
+        <select id="polishStyle">
+          <option value="formal">正式商务</option>
+          <option value="casual">轻松日常</option>
+          <option value="academic">学术专业</option>
+          <option value="social">社交媒体</option>
+          <option value="creative">创意营销</option>
+        </select>
+      </div>
+      <button class="btn" id="polishBtn">✨ 润色</button>
+    </div>
+
+    <div class="output empty" id="output">
+      <button class="copy-btn" id="copyBtn" style="display:none;">📋 复制</button>
+      <span id="outputText">结果会显示在这里...</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    🌐 Built on Pi Network · 60M+ Pioneers
+  </div>
+</div>
+
+<script>
+  // ============== UI 交互 ==============
+  const $ = (id) => document.getElementById(id);
+  const tabs = document.querySelectorAll('.tab');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const tab = t.dataset.tab;
+    $('translatePanel').style.display = tab === 'translate' ? 'block' : 'none';
+    $('polishPanel').style.display = tab === 'polish' ? 'block' : 'none';
+  }));
+
+  $('inputText').addEventListener('input', e => {
+    $('charCount').textContent = e.target.value.length;
+  });
+
+  function showOutput(text) {
+    $('output').classList.remove('empty');
+    $('outputText').textContent = text;
+    $('copyBtn').style.display = 'inline-block';
+  }
+
+  $('copyBtn').addEventListener('click', () => {
+    const text = $('outputText').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      $('copyBtn').textContent = '✅ 已复制';
+      setTimeout(() => $('copyBtn').textContent = '📋 复制', 2000);
+    });
+  });
+
+  // ============== 翻译功能 ==============
+  const LANG_MAP = {
+    zh: 'zh', 'zh-CN': 'zh', en: 'en', ja: 'ja', ko: 'ko',
+    es: 'es', fr: 'fr', de: 'de', ru: 'ru', ar: 'ar', hi: 'hi', pt: 'pt'
+  };
+
+  async function doTranslate() {
+    const text = $('inputText').value.trim();
+    if (!text) return alert('请输入文本');
+    const src = $('srcLang').value;
+    const tgt = $('tgtLang').value;
+
+    $('translateBtn').disabled = true;
+    $('translateBtn').textContent = '⏳ 翻译中...';
+    showOutput('翻译中...');
+
+    try {
+      const res = await fetch('https://libretranslate.de/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          q: text,
+          source: src === 'auto' ? 'auto' : LANG_MAP[src] || src,
+          target: LANG_MAP[tgt] || tgt,
+          format: 'text'
+        })
+      });
+      const data = await res.json();
+      if (data.translatedText) {
+        showOutput(data.translatedText);
+      } else {
+        throw new Error(data.error || '翻译失败');
+      }
+    } catch (e) {
+      // Fallback: mock translation
+      const mock = `[${tgt.toUpperCase()}] ${text} (演示模式 - 真实翻译需要服务端配置)`;
+      showOutput(mock);
+    } finally {
+      $('translateBtn').disabled = false;
+      $('translateBtn').textContent = '🚀 翻译';
+    }
+  }
+  $('translateBtn').addEventListener('click', doTranslate);
+
+  // ============== 润色功能 ==============
+  const POLISH_TEMPLATES = {
+    formal: (t) => `${t}\n\n[正式商务润色建议]\n- 使用敬语和正式称呼\n- 结构化分点表达\n- 添加落款和日期`,
+    casual: (t) => `${t}\n\n[轻松日常版]\n更亲切、更口语化，加 emoji 会更自然 😊`,
+    academic: (t) => `${t}\n\n[学术版建议]\n- 加入引用和文献支持\n- 强化论点逻辑链\n- 使用专业术语`,
+    social: (t) => `${t}\n\n[社媒版]\n#话题标签 + 引发互动的问题 + 表情符号`,
+    creative: (t) => `${t}\n\n[创意版]\n用故事化、感官化的语言吸引注意力`
+  };
+
+  $('polishBtn').addEventListener('click', () => {
+    const text = $('polishInput').value.trim();
+    if (!text) return alert('请输入草稿');
+    const style = $('polishStyle').value;
+    showOutput(POLISH_TEMPLATES[style](text));
+  });
+
+  // ============== Pi SDK 集成 ==============
+  let piUser = null;
+
+  function setAuthStatus(msg, logged) {
+    const bar = $('userBar');
+    bar.classList.toggle('logged', !!logged);
+    $('authStatus').textContent = msg;
+  }
+
+  async function initPi() {
+    try {
+      // Step 1: Check if SDK loaded
+      if (typeof Pi === 'undefined' || !Pi) {
+        setAuthStatus('⚠️ 请在 Pi Browser 中打开', false);
+        return;
+      }
+
+      // Step 2: Init with sandbox for external URL
+      Pi.init({ version: '2.0', sandbox: true });
+
+      // Step 3: Authenticate - only works in Pi Browser
+      const onIncompletePaymentFound = (payment) => {
+        console.log('Incomplete payment found:', payment);
+      };
+
+      const auth = await Pi.authenticate(['username'], onIncompletePaymentFound);
+      piUser = auth.user;
+      setAuthStatus('✅ ' + piUser.username + ' · Pi 已连接', true);
+    } catch (e) {
+      console.warn('Pi auth:', e && e.message ? e.message : String(e));
+      setAuthStatus('ℹ️ 请在 Pi Browser 中登录以获得完整功能', false);
+    }
+  }
+
+  // Run after page fully loads
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() { setTimeout(initPi, 1500); });
+  } else {
+    setTimeout(initPi, 1500);
+  }
+</script>
+
+</body>
+</html>
