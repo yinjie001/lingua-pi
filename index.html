@@ -54,8 +54,23 @@
     padding: 10px 16px;
     margin-top: 16px;
     font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
   .user-bar.logged { background: rgba(255,255,255,0.25); }
+  .pi-login-btn {
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.4);
+    color: #fff;
+    padding: 4px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .pi-login-btn:hover { background: rgba(255,255,255,0.3); }
   .main {
     padding: 24px;
   }
@@ -186,7 +201,8 @@
     <h1>船长译</h1>
     <div class="subtitle">LINGUA PI</div>
     <div class="user-bar" id="userBar">
-      🔌 <span id="authStatus">正在连接 Pi 网络...</span>
+      <span id="authStatus">🔌 正在连接 Pi 网络...</span>
+      <button id="piLoginBtn" class="pi-login-btn" style="display:none;">🔐 登录 Pi</button>
     </div>
   </div>
 
@@ -335,7 +351,6 @@
         throw new Error(data.error || '翻译失败');
       }
     } catch (e) {
-      // Fallback: mock translation
       const mock = `[${tgt.toUpperCase()}] ${text} (演示模式 - 真实翻译需要服务端配置)`;
       showOutput(mock);
     } finally {
@@ -363,41 +378,99 @@
 
   // ============== Pi SDK 集成 ==============
   let piUser = null;
+  let piToken = null;
 
   function setAuthStatus(msg, logged) {
     const bar = $('userBar');
     bar.classList.toggle('logged', !!logged);
-    $('authStatus').textContent = msg;
+    $('authStatus').innerHTML = msg;
   }
 
-  async function initPi() {
+  /**
+   * 后端验证 access token
+   * 把 token 发给你的后端 → 后端调用 GET https://api.minepi.com/v2/me 验证
+   */
+  async function validateTokenWithBackend(accessToken) {
     try {
-      // Step 1: Check if SDK loaded
-      if (typeof Pi === 'undefined' || !Pi) {
-        setAuthStatus('⚠️ 请在 Pi Browser 中打开', false);
-        return;
-      }
+      // 示意：发给你的后端 API
+      // const res = await fetch('/api/auth/pi/validate', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ accessToken })
+      // });
+      // const data = await res.json();
+      // return data.valid;
 
-      // Step 2: Init with sandbox for external URL
-      Pi.init({ version: '2.0', sandbox: true });
-
-      // Step 3: Authenticate - only works in Pi Browser
-      const onIncompletePaymentFound = (payment) => {
-        console.log('Incomplete payment found:', payment);
-      };
-
-      const auth = await Pi.authenticate(['username'], onIncompletePaymentFound);
-      piUser = auth.user;
-      setAuthStatus('✅ ' + piUser.username + ' · Pi 已连接', true);
+      // 本 demo 阶段：模拟验证通过
+      console.log('Pi Access Token:', accessToken);
+      return true;
     } catch (e) {
-      console.warn('Pi auth:', e && e.message ? e.message : String(e));
-      setAuthStatus('ℹ️ 请在 Pi Browser 中登录以获得完整功能', false);
+      console.error('Token validation failed:', e);
+      return false;
     }
   }
 
-  // Run after page fully loads
+  /**
+   * Pi SDK 初始化 + 认证
+   */
+  async function initPi() {
+    if (typeof Pi === 'undefined' || !Pi) {
+      setAuthStatus('⚠️ 请在 Pi Browser 中打开以使用登录功能', false);
+      $('piLoginBtn').style.display = 'inline-block';
+      $('piLoginBtn').textContent = '🔐 登录 Pi';
+      return;
+    }
+
+    try {
+      // await Pi.init() 完全完成后再继续
+      await Pi.init({ version: '2.0', sandbox: true });
+
+      const onIncompletePaymentFound = (payment) => {
+        console.log('Incomplete payment found:', payment.identifier);
+      };
+
+      const auth = await Pi.authenticate(['username'], onIncompletePaymentFound);
+
+      // Step 1: 获取 token
+      piToken = auth.accessToken;
+      piUser = auth.user;
+
+      // Step 2: 发到后端验证
+      const valid = await validateTokenWithBackend(piToken);
+
+      if (valid) {
+        setAuthStatus(`✅ ${piUser.username} · Pi 已连接`, true);
+        $('piLoginBtn').style.display = 'none';
+      } else {
+        setAuthStatus('⚠️ 登录验证失败，请重试', false);
+        $('piLoginBtn').style.display = 'inline-block';
+        $('piLoginBtn').textContent = '🔄 重试';
+      }
+    } catch (e) {
+      console.warn('Pi auth error:', e && e.message ? e.message : String(e));
+      const errMsg = e && e.message ? e.message : String(e);
+      if (errMsg.includes('cancelled') || errMsg.includes('cancel')) {
+        setAuthStatus('ℹ️ 取消登录 · 仍可以访客模式使用', false);
+      } else {
+        setAuthStatus('ℹ️ 请在 Pi Browser 中登录以获得完整功能', false);
+      }
+      $('piLoginBtn').style.display = 'inline-block';
+      $('piLoginBtn').textContent = '🔐 登录 Pi';
+    }
+  }
+
+  // 手动登录按钮
+  $('piLoginBtn').addEventListener('click', () => {
+    $('piLoginBtn').disabled = true;
+    $('piLoginBtn').textContent = '⏳ 登录中...';
+    initPi().finally(() => {
+      $('piLoginBtn').disabled = false;
+    });
+  });
+
+  // 页面加载完成后自动触发
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() { setTimeout(initPi, 1500); });
+    document.addEventListener('DOMContentLoaded', () => setTimeout(initPi, 1500));
   } else {
     setTimeout(initPi, 1500);
   }
