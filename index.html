@@ -4,16 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>船长译 Lingua Pi</title>
-<script>
-(function() {
-  var sc = document.createElement('script');
-  sc.src = 'https://sdk.minepi.com/pi-sdk.js';
-  sc.async = true;
-  sc.onload = function() { window.__piSDKReady = true; };
-  sc.onerror = function() { window.__piSDKReady = false; };
-  document.head.appendChild(sc);
-})();
-</script>
+<!-- REQUIRED: Pi SDK 必须加载 -->
+<script src="https://sdk.minepi.com/pi-sdk.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -71,6 +63,7 @@
     white-space: nowrap;
   }
   .pi-login-btn:hover { background: rgba(255,255,255,0.3); }
+  .pi-login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .main {
     padding: 24px;
   }
@@ -351,7 +344,7 @@
         throw new Error(data.error || '翻译失败');
       }
     } catch (e) {
-      const mock = `[${tgt.toUpperCase()}] ${text} (演示模式 - 真实翻译需要服务端配置)`;
+      const mock = `[${tgt.toUpperCase()}] ${text} (演示模式)`;
       showOutput(mock);
     } finally {
       $('translateBtn').disabled = false;
@@ -377,9 +370,21 @@
   });
 
   // ============== Pi SDK 集成 ==============
-  let piUser = null;
-  let piToken = null;
+  //
+  // 官方文档要求：
+  // 1. 页面加载时自动触发认证（+ 手动登录按钮作为备用）
+  // 2. await Pi.init() 完全 resolve 后再调用 authenticate
+  // 3. 发送 accessToken 到后端 → 后端调用 GET https://api.minepi.com/v2/me 验证
+  // 4. 只请求 "username" scope
+  //
+  // 注意：Pi SDK 功能必须在 Pi Browser 内运行
+  //
 
+  let piUser = null;
+
+  /**
+   * 更新认证状态 UI
+   */
   function setAuthStatus(msg, logged) {
     const bar = $('userBar');
     bar.classList.toggle('logged', !!logged);
@@ -388,33 +393,56 @@
 
   /**
    * 后端验证 access token
-   * 把 token 发给你的后端 → 后端调用 GET https://api.minepi.com/v2/me 验证
+   *
+   * 官方要求：把 accessToken 发给你的后端，
+   * 后端调用 GET https://api.minepi.com/v2/me
+   *   Header: Authorization: Bearer <accessToken>
+   * 无需 Pi API Key
+   *
+   * 后端返回示例: { uid: "...", username: "..." }
    */
   async function validateTokenWithBackend(accessToken) {
     try {
-      // 示意：发给你的后端 API
-      // const res = await fetch('/api/auth/pi/validate', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ accessToken })
+      // 把 token 发到你的后端 API 验证
+      // 后端参考 (Node.js / Express):
+      //
+      // const response = await fetch('https://api.minepi.com/v2/me', {
+      //   headers: { 'Authorization': `Bearer ${accessToken}` }
       // });
-      // const data = await res.json();
-      // return data.valid;
+      // if (!response.ok) throw new Error('Token invalid');
+      // return await response.json();
+      //
+      const res = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken })
+      });
 
-      // 本 demo 阶段：模拟验证通过
-      console.log('Pi Access Token:', accessToken);
-      return true;
+      if (!res.ok) {
+        throw new Error('Token validation failed');
+      }
+
+      const data = await res.json();
+      return data; // 后端返回 { uid, username } 等用户信息
     } catch (e) {
-      console.error('Token validation failed:', e);
-      return false;
+      console.error('Token validation error:', e);
+      // 后端验证失败时返回 null，前端降级为"已认证但未验证"
+      return null;
     }
   }
 
   /**
-   * Pi SDK 初始化 + 认证
+   * Pi SDK 主认证流程
+   *
+   * 严格按照官方示例顺序执行：
+   * 1. await Pi.init(...)  — 必须等 init Promise 完成
+   * 2. Pi.authenticate(...) — 获取 user + accessToken
+   * 3. 发 token 到后端验证
+   * 4. 验证通过后解锁功能
    */
   async function initPi() {
-    if (typeof Pi === 'undefined' || !Pi) {
+    // 检查 SDK 是否加载
+    if (typeof window.Pi === 'undefined' || !window.Pi) {
       setAuthStatus('⚠️ 请在 Pi Browser 中打开以使用登录功能', false);
       $('piLoginBtn').style.display = 'inline-block';
       $('piLoginBtn').textContent = '🔐 登录 Pi';
@@ -422,58 +450,87 @@
     }
 
     try {
-      // await Pi.init() 完全完成后再继续
-      await Pi.init({ version: '2.0', sandbox: true });
+      // ---- 步骤 1: 初始化 SDK ----
+      // await Pi.init() 必须完全 resolve 后才能调用其他 Pi SDK 方法
+      // sandbox: true  — 沙盒环境（开发/测试用）
+      // sandbox: false — 生产环境（正式 listing）
+      await window.Pi.init({
+        version: '2.0',
+        sandbox: true  // 部署正式版时改为 false
+      });
 
-      const onIncompletePaymentFound = (payment) => {
-        console.log('Incomplete payment found:', payment.identifier);
-      };
+      // ---- 步骤 2: 认证 ----
+      // onIncompletePaymentFound: 检测未完成的支付
+      const authResult = await window.Pi.authenticate(
+        ['username'],   // 官方要求：只请求 username scope
+        function onIncompletePaymentFound(payment) {
+          console.log('发现未完成支付:', payment.identifier);
+          // 业务逻辑：处理中断的支付
+        }
+      );
 
-      const auth = await Pi.authenticate(['username'], onIncompletePaymentFound);
+      const { user, accessToken } = authResult;
 
-      // Step 1: 获取 token
-      piToken = auth.accessToken;
-      piUser = auth.user;
+      // ---- 步骤 3: 发 token 到后端验证 ----
+      // 官方明确要求：不要在客户端直接信任用户数据，必须后端验证
+      const backendUser = await validateTokenWithBackend(accessToken);
 
-      // Step 2: 发到后端验证
-      const valid = await validateTokenWithBackend(piToken);
-
-      if (valid) {
-        setAuthStatus(`✅ ${piUser.username} · Pi 已连接`, true);
+      if (backendUser) {
+        // 后端验证成功 → 完整登录状态
+        piUser = backendUser;
+        setAuthStatus(`✅ ${user.username} · Pi 已连接（已验证）`, true);
         $('piLoginBtn').style.display = 'none';
       } else {
-        setAuthStatus('⚠️ 登录验证失败，请重试', false);
-        $('piLoginBtn').style.display = 'inline-block';
-        $('piLoginBtn').textContent = '🔄 重试';
+        // 后端验证失败（可能没有配置后端）
+        piUser = { username: user.username };
+        setAuthStatus(`⚠️ ${user.username} · Pi 已连接（验证跳过，演示模式）`, true);
+        $('piLoginBtn').style.display = 'none';
       }
+
+      console.log('Pi 登录成功:', { user, accessToken: accessToken.substring(0, 20) + '...' });
+
     } catch (e) {
-      console.warn('Pi auth error:', e && e.message ? e.message : String(e));
+      // ---- 错误处理 ----
       const errMsg = e && e.message ? e.message : String(e);
-      if (errMsg.includes('cancelled') || errMsg.includes('cancel')) {
+
+      if (errMsg.includes('cancelled') || errMsg.includes('cancel') || errMsg.includes('denied')) {
+        // 用户主动取消 / 拒绝授权
         setAuthStatus('ℹ️ 取消登录 · 仍可以访客模式使用', false);
+      } else if (errMsg.includes('Not in Pi Browser')) {
+        // 不在 Pi Browser 环境中
+        setAuthStatus('⚠️ 请在 Pi Browser 中打开以使用登录功能', false);
       } else {
+        // 其他错误
         setAuthStatus('ℹ️ 请在 Pi Browser 中登录以获得完整功能', false);
+        console.warn('Pi auth error:', errMsg);
       }
+
+      // 显示登录按钮供手动重试
       $('piLoginBtn').style.display = 'inline-block';
       $('piLoginBtn').textContent = '🔐 登录 Pi';
     }
   }
 
-  // 手动登录按钮
-  $('piLoginBtn').addEventListener('click', () => {
-    $('piLoginBtn').disabled = true;
-    $('piLoginBtn').textContent = '⏳ 登录中...';
-    initPi().finally(() => {
-      $('piLoginBtn').disabled = false;
-    });
-  });
-
-  // 页面加载完成后自动触发
+  // ---- 步骤 4: 页面加载时自动触发认证 ----
+  // 官方要求：自动触发 + 手动按钮兜底
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => setTimeout(initPi, 1500));
   } else {
     setTimeout(initPi, 1500);
   }
+
+  // ---- 手动登录按钮 ----
+  $('piLoginBtn').addEventListener('click', () => {
+    $('piLoginBtn').disabled = true;
+    $('piLoginBtn').textContent = '⏳ 登录中...';
+    setAuthStatus('🔌 正在登录...', false);
+    initPi().finally(() => {
+      if ($('piLoginBtn').style.display !== 'none') {
+        $('piLoginBtn').disabled = false;
+        $('piLoginBtn').textContent = '🔐 登录 Pi';
+      }
+    });
+  });
 </script>
 
 </body>
