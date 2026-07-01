@@ -450,14 +450,15 @@
     }
 
     try {
+      console.log('[Pi SDK] init() starting, version 2.0, sandbox=false (production)');
       // ---- 步骤 1: 初始化 SDK ----
       // await Pi.init() 必须完全 resolve 后才能调用其他 Pi SDK 方法
-      // sandbox: true  — 沙盒环境（开发/测试用）
-      // sandbox: false — 生产环境（正式 listing）
+      // sandbox: false — 生产环境（Pi App Studio 审核要求）
       await window.Pi.init({
         version: '2.0',
-        sandbox: true  // 部署正式版时改为 false
+        sandbox: false
       });
+      console.log('[Pi SDK] init() resolved, calling authenticate...');
 
       // ---- 步骤 2: 认证 ----
       // onIncompletePaymentFound: 检测未完成的支付
@@ -513,10 +514,32 @@
 
   // ---- 步骤 4: 页面加载时自动触发认证 ----
   // 官方要求：自动触发 + 手动按钮兜底
+  // 关键：等 SDK 真正可调用再 init，不要盲目 setTimeout
+  function bootstrapPiAuth() {
+    // Pi SDK 脚本会派发 pi_sdk_loaded 事件；兼容老路径：window.Pi 直接可用
+    const start = () => {
+      console.log('[Pi SDK] bootstrap: starting initPi()');
+      initPi();
+    };
+    if (typeof window.Pi !== 'undefined' && window.Pi) {
+      start();
+    } else {
+      // 兜底：等 pi_sdk_loaded 事件，最多等 3 秒
+      let done = false;
+      const onLoaded = () => { if (!done) { done = true; start(); } };
+      window.addEventListener('pi_sdk_loaded', onLoaded, { once: true });
+      setTimeout(() => {
+        if (!done && typeof window.Pi !== 'undefined' && window.Pi) {
+          done = true; start();
+        }
+      }, 800);
+    }
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(initPi, 1500));
+    document.addEventListener('DOMContentLoaded', bootstrapPiAuth);
   } else {
-    setTimeout(initPi, 1500);
+    bootstrapPiAuth();
   }
 
   // ---- 手动登录按钮 ----
